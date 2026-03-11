@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>直播管理後台</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); text-align: center; }
+        .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
+        button { font-size: 16px; padding: 15px 20px; cursor: pointer; border: none; border-radius: 8px; color: white; font-weight: bold; transition: opacity 0.2s; }
+        button:hover { opacity: 0.8; }
+        .btn-obs { background-color: #007bff; }
+        .btn-play { background-color: #28a745; }
+        .btn-stop { background-color: #dc3545; }
+        .status { margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 8px; font-weight: bold; font-size: 18px; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>⚙️ 直播控制台</h2>
+        <div class="btn-group">
+            <button class="btn-obs" onclick="sendCommand('obs')">🎥 切換至 OBS 外部推流</button>
+            <button class="btn-play" onclick="sendCommand('play_local')">▶️ 播放 / 推送本地影片</button>
+            <button class="btn-stop" onclick="sendCommand('stop_local')">⏸️ 暫停本地影片</button>
+        </div>
+        <div class="status" id="statusText">目前狀態: 載入中...</div>
+    </div>
+
+    <script>
+        // 定期向後端取得目前狀態
+        function fetchStatus() {
+            fetch('/api/status')
+                .then(res => res.json())
+                .then(data => {
+                    let text = "目前狀態: ";
+                    if (data.mode === 'obs') {
+                        text += "🟢 等待/接收 OBS 推流中";
+                    } else if (data.mode === 'local' && data.is_playing) {
+                        text += "🎬 正在播放本地影片推流";
+                    } else {
+                        text += "⏸️ 影片已暫停 (無推流)";
+                    }
+                    document.getElementById('statusText').innerText = text;
+                });
+        }
+
+        // 發送控制指令給後端
+        function sendCommand(cmd) {
+            fetch('/api/command', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({command: cmd})
+            }).then(() => fetchStatus());
+        }
+
+        setInterval(fetchStatus, 2000); // 每兩秒更新一次狀態
+        fetchStatus();
+    </script>
+</body>
+</html>

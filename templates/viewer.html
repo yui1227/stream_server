@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的直播頻道 - 觀看端</title>
+    <!-- 引入 hls.js 來播放 HLS 串流 -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body { background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: sans-serif; }
+        video { width: 90%; max-width: 1000px; background: #000; border: 2px solid #333; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .header { margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .live-indicator { width: 12px; height: 12px; background-color: red; border-radius: 50%; animation: blink 1.5s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="live-indicator"></div>
+        <h2>直播放送中</h2>
+    </div>
+    <video id="video" controls autoplay muted></video>
+    <script>
+        var video = document.getElementById('video');
+        // MediaMTX 預設在 8888 port 提供 HLS 轉換服務
+        var videoSrc = '/live/stream/index.m3u8';
+
+        if (Hls.isSupported()) {
+            var hls = new Hls();
+            hls.loadSource(videoSrc);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                video.play().catch(e => console.log("自動播放被阻擋，請手動播放"));
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // 支援原生 HLS 的瀏覽器 (如 Safari)
+            video.src = videoSrc;
+            video.addEventListener('loadedmetadata', function() {
+                video.play();
+            });
+        }
+    </script>
+</body>
+</html>
