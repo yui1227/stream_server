@@ -7,38 +7,288 @@
     <!-- 引入 hls.js 來播放 HLS 串流 -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
-        body { background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: sans-serif; }
-        video { width: 90%; max-width: 1000px; background: #000; border: 2px solid #333; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        .header { margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        /* 基礎全螢幕設定 */
+        body { 
+            background-color: #0f0f0f; 
+            color: white; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; /* 佔滿整個視窗高度 */
+            margin: 0; 
+            font-family: sans-serif; 
+            overflow: hidden; /* 隱藏整個網頁的滾動條，交給內部區塊滾動 */
+        }
+        
+        /* 頂部狀態列 */
+        .header { 
+            padding: 15px 20px; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            background: #000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        .header h2 { margin: 0; font-size: 1.2rem; }
         .live-indicator { width: 12px; height: 12px; background-color: red; border-radius: 50%; animation: blink 1.5s infinite; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+
+        /* --- 主要排版容器 --- */
+        .main-wrapper { 
+            display: flex; 
+            flex-direction: row; 
+            flex: 1; /* 佔滿頂部列以下的剩餘高度 */
+            padding: 15px; 
+            gap: 15px; 
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        
+        /* --- 左側影片區塊 --- */
+        .video-container { 
+            flex: 1; /* 佔滿剩餘寬度 */
+            position: relative; 
+            background: #000; 
+            border-radius: 8px; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        /* 確保影片保持比例並填滿區塊 */
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+            outline: none;
+        }
+        
+        /* 待機畫面遮罩 */
+        .offline-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; transition: opacity 0.5s; }
+        .offline-text { text-align: center; color: #fff; }
+        .offline-text h2 { margin: 0; font-size: 2.5em; color: #ff4757; margin-bottom: 10px; }
+        .offline-text p { color: #aaa; font-size: 1.2em; }
+        .hidden { opacity: 0; pointer-events: none; }
+        
+        /* --- 右側聊天室區塊 --- */
+        .chat-container { 
+            width: 350px; /* 固定寬度不動 */
+            flex-shrink: 0; /* 防止被擠壓變小 */
+            background: #18181b; 
+            border: 1px solid #2a2a2b; 
+            border-radius: 8px; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+        .chat-header { background: #222; padding: 12px; text-align: center; font-weight: bold; border-bottom: 1px solid #333; }
+        .chat-messages { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 0.95em; scroll-behavior: smooth; }
+        .chat-message { background: #2a2a2b; padding: 8px 10px; border-radius: 6px; word-break: break-all; }
+        .chat-message .user { font-weight: bold; color: #eb0400; margin-right: 5px; }
+        .chat-input-area { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: #222; border-top: 1px solid #333; }
+        .chat-input-row { display: flex; gap: 8px; }
+        .chat-input-area input { background: #111; border: 1px solid #444; color: white; padding: 10px; border-radius: 4px; outline: none; transition: border 0.2s;}
+        .chat-input-area input:focus { border-color: #eb0400; }
+        .chat-input-area button { background: #eb0400; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; white-space: nowrap; }
+        .chat-input-area button:hover { background: #ff3333; }
+
+        /* --- 響應式設計：當視窗小於 900px 時改為直式排版 --- */
+        @media (max-width: 900px) { 
+            body { overflow: auto; /* 手機版允許上下滑動 */ }
+            .main-wrapper { 
+                flex-direction: column; 
+                padding: 10px;
+                overflow: visible;
+            } 
+            .video-container {
+                flex: none;
+                width: 100%;
+                /* 手機版影片固定為 16:9 比例 */
+                aspect-ratio: 16 / 9;
+                border-radius: 4px;
+            }
+            .chat-container { 
+                width: 100%; 
+                flex: 1; /* 佔滿下方所有空間 */
+                min-height: 400px;
+                border-radius: 4px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <div class="live-indicator"></div>
-        <h2>直播放送中</h2>
+        <div class="live-indicator" id="liveDot"></div>
+        <h2 id="liveTitle">直播狀態檢查中...</h2>
     </div>
-    <video id="video" controls autoplay muted></video>
+
+    <!-- 滿版內容區塊 -->
+    <div class="main-wrapper">
+        <!-- 左/上：影片區塊 -->
+        <div class="video-container">
+            <video id="video" controls autoplay muted playsinline></video>
+            <div id="offlineOverlay" class="offline-overlay">
+                <div class="offline-text">
+                    <h2>💤 待機中</h2>
+                    <p>主播目前不在座位上，或尚未開始推流</p>
+                    <p style="font-size: 0.9em; margin-top: 20px;">(系統將自動偵測並恢復連線)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右/下：聊天室區塊 -->
+        <div class="chat-container">
+            <div class="chat-header">💬 聊天室</div>
+            <div class="chat-messages" id="chatMessages">
+                <!-- 訊息會動態加到這裡 -->
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chatUser" placeholder="您的暱稱" value="觀眾">
+                <div class="chat-input-row">
+                    <input type="text" id="chatInput" placeholder="輸入訊息..." style="flex: 1;" onkeypress="handleChatKeyPress(event)">
+                    <button onclick="sendMessage()">發送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         var video = document.getElementById('video');
-        // MediaMTX 預設在 8888 port 提供 HLS 轉換服務
         var videoSrc = '/live/stream/index.m3u8';
+        
+        // 取得介面元素
+        var offlineOverlay = document.getElementById('offlineOverlay');
+        var liveTitle = document.getElementById('liveTitle');
+        var liveDot = document.getElementById('liveDot');
+        
+        var hls = null;
+        var retryTimer = null;
 
-        if (Hls.isSupported()) {
-            var hls = new Hls();
-            hls.loadSource(videoSrc);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                video.play().catch(e => console.log("自動播放被阻擋，請手動播放"));
-            });
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // 支援原生 HLS 的瀏覽器 (如 Safari)
-            video.src = videoSrc;
-            video.addEventListener('loadedmetadata', function() {
-                video.play();
+        // 更新介面上方的紅點與文字狀態
+        function updateStatus(isLive) {
+            if (isLive) {
+                offlineOverlay.classList.add('hidden');
+                liveTitle.innerText = "直播放送中";
+                liveTitle.style.color = "white";
+                liveDot.style.backgroundColor = "red";
+                liveDot.style.animation = "blink 1.5s infinite";
+            } else {
+                offlineOverlay.classList.remove('hidden');
+                liveTitle.innerText = "目前離線";
+                liveTitle.style.color = "#aaa";
+                liveDot.style.backgroundColor = "#555";
+                liveDot.style.animation = "none";
+            }
+        }
+
+        // 初始化與重試邏輯
+        function initPlayer() {
+            if (Hls.isSupported()) {
+                if (hls) { hls.destroy(); }
+                
+                hls = new Hls({ manifestLoadingMaxRetry: 0 });
+                hls.loadSource(videoSrc);
+                hls.attachMedia(video);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    updateStatus(true);
+                    video.play().catch(e => console.log("自動播放被阻擋"));
+                });
+
+                hls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.log("偵測到離線，準備重試...");
+                                showOfflineAndRetry();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                showOfflineAndRetry();
+                                break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = videoSrc;
+                video.addEventListener('loadedmetadata', function() {
+                    updateStatus(true);
+                    video.play();
+                });
+                video.addEventListener('error', function() {
+                    showOfflineAndRetryNative();
+                });
+            }
+        }
+
+        function showOfflineAndRetry() {
+            updateStatus(false);
+            if (hls) { hls.destroy(); hls = null; }
+            clearTimeout(retryTimer);
+            retryTimer = setTimeout(initPlayer, 4000); 
+        }
+
+        function showOfflineAndRetryNative() {
+            updateStatus(false);
+            clearTimeout(retryTimer);
+            retryTimer = setTimeout(function() {
+                video.src = videoSrc;
+                video.load();
+            }, 4000);
+        }
+
+        // --- 聊天室邏輯 ---
+        var chatMessagesDiv = document.getElementById('chatMessages');
+        var chatInput = document.getElementById('chatInput');
+        var chatUser = document.getElementById('chatUser');
+        var lastMessageCount = -1;
+
+        function fetchChat() {
+            fetch('/api/chat')
+                .then(res => res.json())
+                .then(messages => {
+                    if (messages.length !== lastMessageCount) {
+                        chatMessagesDiv.innerHTML = '';
+                        messages.forEach(msg => {
+                            var div = document.createElement('div');
+                            div.className = 'chat-message';
+                            div.innerHTML = `<span class="user">${msg.username}:</span><span class="text">${msg.message}</span>`;
+                            chatMessagesDiv.appendChild(div);
+                        });
+                        chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+                        lastMessageCount = messages.length;
+                    }
+                })
+                .catch(e => console.log("聊天室讀取失敗"));
+        }
+
+        function sendMessage() {
+            var text = chatInput.value.trim();
+            var user = chatUser.value.trim() || '觀眾';
+            if (!text) return;
+
+            chatInput.value = ''; 
+
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, message: text })
+            }).then(() => {
+                fetchChat(); 
             });
         }
+
+        function handleChatKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        setInterval(fetchChat, 2000);
+        fetchChat();
+        initPlayer();
     </script>
 </body>
 </html>

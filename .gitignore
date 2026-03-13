@@ -7,5 +7,6 @@ wheels/
 *.egg-info
 bins/
 *.mp4
+playlist.txt
 # Virtual environments
 .venv

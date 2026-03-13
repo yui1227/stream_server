@@ -5,15 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>直播管理後台</title>
     <style>
-        body { font-family: sans-serif; background: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); text-align: center; }
+        body { font-family: sans-serif; background: #f4f4f9; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; margin: 0; padding: 40px 20px; box-sizing: border-box; }
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.1); text-align: center; width: 100%; max-width: 500px; }
         .btn-group { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
         button { font-size: 16px; padding: 15px 20px; cursor: pointer; border: none; border-radius: 8px; color: white; font-weight: bold; transition: opacity 0.2s; }
         button:hover { opacity: 0.8; }
         .btn-obs { background-color: #007bff; }
         .btn-play { background-color: #28a745; }
         .btn-stop { background-color: #dc3545; }
+        .btn-upload { background-color: #6c757d; padding: 10px 15px; font-size: 14px; }
+        .btn-delete { background-color: #dc3545; padding: 5px 10px; font-size: 12px; border-radius: 4px; }
         .status { margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 8px; font-weight: bold; font-size: 18px; color: #333; }
+        
+        /* 影片管理區塊樣式 */
+        hr { margin: 30px 0; border: 0; border-top: 2px dashed #ddd; }
+        .upload-section { display: flex; flex-direction: column; gap: 10px; align-items: center; margin-bottom: 20px; }
+        .video-list { list-style: none; padding: 0; margin: 0; text-align: left; }
+        .video-item { display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 10px 15px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #eee; }
+        .video-name { font-size: 14px; color: #555; word-break: break-all; margin-right: 10px; }
     </style>
 </head>
 <body>
@@ -21,14 +30,26 @@
         <h2>⚙️ 直播控制台</h2>
         <div class="btn-group">
             <button class="btn-obs" onclick="sendCommand('obs')">🎥 切換至 OBS 外部推流</button>
-            <button class="btn-play" onclick="sendCommand('play_local')">▶️ 播放 / 推送本地影片</button>
+            <button class="btn-play" onclick="sendCommand('play_local')">▶️ 播放 / 重新載入影片</button>
             <button class="btn-stop" onclick="sendCommand('stop_local')">⏸️ 暫停本地影片</button>
         </div>
         <div class="status" id="statusText">目前狀態: 載入中...</div>
+
+        <hr>
+
+        <h2>📂 本地影片管理</h2>
+        <div class="upload-section">
+            <input type="file" id="videoUpload" accept=".mp4" style="width: 100%; max-width: 300px;">
+            <button class="btn-upload" onclick="uploadVideo()">上傳 MP4 影片</button>
+            <div id="uploadStatus" style="font-size: 14px; color: #007bff; min-height: 20px;"></div>
+        </div>
+        <ul id="videoList" class="video-list">
+            <!-- 影片列表將透過 JS 動態產生 -->
+        </ul>
     </div>
 
     <script>
-        // 定期向後端取得目前狀態
+        // --- 串流控制邏輯 ---
         function fetchStatus() {
             fetch('/api/status')
                 .then(res => res.json())
@@ -37,7 +58,7 @@
                     if (data.mode === 'obs') {
                         text += "🟢 等待/接收 OBS 推流中";
                     } else if (data.mode === 'local' && data.is_playing) {
-                        text += "🎬 正在播放本地影片推流";
+                        text += "🎬 正在輪播本地影片";
                     } else {
                         text += "⏸️ 影片已暫停 (無推流)";
                     }
@@ -45,7 +66,6 @@
                 });
         }
 
-        // 發送控制指令給後端
         function sendCommand(cmd) {
             fetch('/api/command', {
                 method: 'POST',
@@ -54,8 +74,88 @@
             }).then(() => fetchStatus());
         }
 
-        setInterval(fetchStatus, 2000); // 每兩秒更新一次狀態
+        // --- 影片管理邏輯 ---
+        function loadVideos() {
+            fetch('/api/videos')
+                .then(res => res.json())
+                .then(videos => {
+                    const list = document.getElementById('videoList');
+                    list.innerHTML = '';
+                    if (videos.length === 0) {
+                        list.innerHTML = '<li style="text-align:center; color:#999; font-size: 14px;">目前沒有影片</li>';
+                        return;
+                    }
+                    videos.forEach(vid => {
+                        const li = document.createElement('li');
+                        li.className = 'video-item';
+                        li.innerHTML = `
+                            <span class="video-name">📄 ${vid}</span>
+                            <button class="btn-delete" onclick="deleteVideo('${vid}')">刪除</button>
+                        `;
+                        list.appendChild(li);
+                    });
+                });
+        }
+
+        function uploadVideo() {
+            const fileInput = document.getElementById('videoUpload');
+            const file = fileInput.files[0];
+            const statusDiv = document.getElementById('uploadStatus');
+            
+            if (!file) {
+                statusDiv.innerText = "請先選擇檔案！";
+                statusDiv.style.color = "red";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            statusDiv.innerText = "上傳中，請稍候...";
+            statusDiv.style.color = "#007bff";
+
+            fetch('/api/videos', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusDiv.innerText = "上傳成功！";
+                    statusDiv.style.color = "green";
+                    fileInput.value = ''; // 清空選擇
+                    loadVideos(); // 重新載入列表
+                } else {
+                    statusDiv.innerText = "上傳失敗：" + data.error;
+                    statusDiv.style.color = "red";
+                }
+            })
+            .catch(err => {
+                statusDiv.innerText = "發生錯誤！";
+                statusDiv.style.color = "red";
+            });
+        }
+
+        function deleteVideo(filename) {
+            if (!confirm(`確定要刪除 ${filename} 嗎？`)) return;
+            
+            fetch(`/api/videos/${filename}`, {
+                method: 'DELETE'
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadVideos();
+                } else {
+                    alert("刪除失敗：" + data.error);
+                }
+            });
+        }
+
+        // 初始化執行
+        setInterval(fetchStatus, 2000);
         fetchStatus();
+        loadVideos();
     </script>
 </body>
 </html>
